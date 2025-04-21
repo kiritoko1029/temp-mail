@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // 确保日志目录存在
 const logDir = path.join(__dirname, 'logs');
@@ -53,9 +53,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.post('/api/verify-code', (req, res) => {
   const { code } = req.body;
   
+  console.log('收到验证请求:', req.body);
+  
   if (!code) {
+    console.log('验证失败: 未提供验证码');
     return res.status(400).json({ success: false, message: '请输入验证码' });
   }
+  
+  console.log('验证码比对:', code, CONFIG.ACCESS_CODE);
   
   // 验证码校验
   if (code === CONFIG.ACCESS_CODE) {
@@ -64,6 +69,7 @@ app.post('/api/verify-code', (req, res) => {
     const log = `[${timestamp}] 验证码验证成功\n`;
     accessLogStream.write(log);
     
+    console.log('验证成功');
     return res.json({ success: true, message: '验证成功' });
   } else {
     // 记录验证失败
@@ -71,6 +77,7 @@ app.post('/api/verify-code', (req, res) => {
     const log = `[${timestamp}] 验证码验证失败: ${code}\n`;
     accessLogStream.write(log);
     
+    console.log('验证失败: 验证码不匹配');
     return res.status(401).json({ success: false, message: '验证码错误' });
   }
 });

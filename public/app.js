@@ -1,6 +1,53 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // 打印调试信息
+  console.log('=========== 应用初始化 ===========');
+  console.log('localStorage authenticated:', localStorage.getItem('authenticated'));
+  console.log('localStorage accessCode:', localStorage.getItem('accessCode'));
+  
   // 初始化 dayjs
   dayjs.locale('zh-cn');
+  
+  // 全局状态管理
+  const state = {
+    authenticated: localStorage.getItem('authenticated') === 'true',
+    emails: [],
+    currentEmail: null,
+    loading: false,
+    error: null,
+    accessCode: localStorage.getItem('accessCode') || '',
+    autoRefreshInterval: null,
+    viewMode: 'auto'
+  };
+  
+  console.log('state authenticated:', state.authenticated);
+  console.log('state accessCode:', state.accessCode);
+  
+  // DOM 元素
+  const elements = {
+    // 认证相关元素
+    authScreen: document.getElementById('auth-screen'),
+    authForm: document.getElementById('auth-form'),
+    accessCodeInput: document.getElementById('access-code'),
+    authError: document.getElementById('auth-error'),
+    
+    // 应用容器
+    appContainer: document.getElementById('app-container'),
+    
+    // 邮件列表相关元素
+    mailList: document.getElementById('mailList'),
+    mailCount: document.getElementById('mailCount'),
+    mailDetail: document.getElementById('mailDetail'),
+    
+    // 工具栏元素
+    refreshBtn: document.getElementById('refreshBtn'),
+    viewModeSelect: document.getElementById('viewModeSelect'),
+    autoRefreshStatus: document.getElementById('autoRefreshStatus'),
+    
+    // HTML 预览模态框
+    htmlModal: document.getElementById('htmlModal'),
+    htmlPreview: document.getElementById('htmlPreview'),
+    closeHtmlModal: document.getElementById('closeHtmlModal')
+  };
   
   // 缓存DOM元素
   const mailListEl = document.getElementById('mailList');
@@ -14,116 +61,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const viewModeSelect = document.getElementById('viewModeSelect');
   const autoRefreshStatus = document.getElementById('autoRefreshStatus');
   
-  // 验证相关元素
-  const authScreen = document.getElementById('authScreen');
-  const authForm = document.getElementById('authForm');
-  const accessCodeInput = document.getElementById('accessCode');
-  const authBtnText = document.getElementById('authBtnText');
-  const authLoading = document.getElementById('authLoading');
-  const authError = document.getElementById('authError');
-  
   // 保存当前选中的邮件ID、配置和当前邮件数据
-  let selectedMailId = null;
-  let appConfig = {
-    requireAuth: true,
-    apiUrl: ''
-  };
-  let currentMailData = null;
+  let currentEmailId = null;
   let currentViewMode = 'auto'; // 'text', 'html', 'auto'
-  let isAuthenticated = false;
-  let autoRefreshInterval = null;
+  let autoRefreshEnabled = true; // 默认启用自动刷新
+  let refreshInterval;
+  let currentEmailData = null;
+  let appConfig = {}; // 添加appConfig变量
   
-  // 初始化认证状态
-  function initAuth() {
-    // 检查本地存储中的认证状态
-    const authToken = localStorage.getItem('authToken');
-    const authExpiry = localStorage.getItem('authExpiry');
-    
-    if (authToken && authExpiry && new Date().getTime() < parseInt(authExpiry)) {
-      // 如果有有效的认证令牌，直接进入应用
-      isAuthenticated = true;
-      authScreen.classList.add('hidden');
-      initApp();
-    } else {
-      // 清除过期的令牌
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('authExpiry');
-      
-      // 显示认证界面
-      authScreen.classList.remove('hidden');
-      accessCodeInput.focus();
-    }
-  }
-  
-  // 处理认证表单提交
-  function handleAuthSubmit(e) {
-    e.preventDefault();
-    
-    const code = accessCodeInput.value.trim();
-    if (!code) {
-      showAuthError('请输入访问码');
-      return;
-    }
-    
-    // 显示加载状态
-    authBtnText.classList.add('hidden');
-    authLoading.classList.remove('hidden');
-    authError.classList.add('hidden');
-    
-    // 发送验证请求
-    fetch('/api/verify-code', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ code })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        // 验证成功，保存认证状态
-        isAuthenticated = true;
-        
-        // 生成简单的令牌并保存到本地存储（24小时有效）
-        const token = Date.now().toString(36) + Math.random().toString(36).substring(2);
-        const expiry = new Date().getTime() + (24 * 60 * 60 * 1000); // 24小时后过期
-        
-        localStorage.setItem('authToken', token);
-        localStorage.setItem('authExpiry', expiry);
-        
-        // 隐藏认证界面，初始化应用
-        authScreen.classList.add('hidden');
-        initApp();
-      } else {
-        // 验证失败，显示错误信息
-        showAuthError(data.message || '验证码错误');
-        
-        // 添加抖动效果
-        authForm.classList.add('shake');
-        setTimeout(() => {
-          authForm.classList.remove('shake');
-        }, 500);
-      }
-    })
-    .catch(error => {
-      showAuthError('验证请求失败，请重试');
-      console.error('验证错误:', error);
-    })
-    .finally(() => {
-      // 恢复按钮状态
-      authBtnText.classList.remove('hidden');
-      authLoading.classList.add('hidden');
-    });
-  }
-  
-  // 显示认证错误
-  function showAuthError(message) {
-    authError.textContent = message;
-    authError.classList.remove('hidden');
-  }
+  console.log('初始化认证状态:', state.authenticated);
   
   // 初始化应用
   function initApp() {
+    console.log('初始化应用');
+    // 确保模态框在初始化时是隐藏的
+    elements.htmlModal.style.display = 'none';
+    elements.htmlModal.classList.add('hidden');
+    elements.htmlModal.classList.remove('show');
+    
     // 加载配置和用户偏好
     loadUserPreferences();
     
@@ -142,24 +97,28 @@ document.addEventListener('DOMContentLoaded', () => {
   // 获取服务器配置
   async function loadConfig() {
     try {
+      console.log('加载服务器配置');
       const response = await fetch('/api/config');
+      if (!response.ok) {
+        throw new Error('服务器配置请求失败: ' + response.status);
+      }
       appConfig = await response.json();
-      currentEmailEl.textContent = `当前邮箱: ${appConfig.email}`;
+      console.log('服务器配置加载成功:', appConfig);
     } catch (error) {
       console.error('加载配置失败:', error);
-      currentEmailEl.textContent = '未能获取邮箱配置';
     }
   }
   
   // 启动自动刷新
   function startAutoRefresh() {
     // 清除现有的定时器
-    if (autoRefreshInterval) {
-      clearInterval(autoRefreshInterval);
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
     }
     
+    console.log('启动自动刷新 (每5秒)');
     // 每5秒刷新一次
-    autoRefreshInterval = setInterval(() => {
+    refreshInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadMailList();
         autoRefreshStatus.innerHTML = '自动刷新: <span class="text-success">活跃</span>';
@@ -178,6 +137,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       const response = await fetch('/api/mails');
+      if (!response.ok) {
+        throw new Error('邮件列表请求失败: ' + response.status);
+      }
+      
       const data = await response.json();
       
       if (!data.result) {
@@ -221,9 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
       // 如果之前有选中的邮件，保持其选中状态
-      if (selectedMailId) {
+      if (currentEmailId) {
         document.querySelectorAll('.mail-item').forEach(item => {
-          item.classList.toggle('active', item.dataset.id == selectedMailId);
+          item.classList.toggle('active', item.dataset.id == currentEmailId);
         });
       }
       
@@ -237,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadMailDetail(mailId) {
     try {
       // 更新选中状态
-      selectedMailId = mailId;
+      currentEmailId = mailId;
       document.querySelectorAll('.mail-item').forEach(item => {
         item.classList.toggle('active', item.dataset.id == mailId);
       });
@@ -246,6 +209,10 @@ document.addEventListener('DOMContentLoaded', () => {
       mailDetailEl.innerHTML = '<div class="p-6 text-center"><div class="loading mx-auto"></div><p class="mt-4 text-gray">加载邮件内容中...</p></div>';
       
       const response = await fetch(`/api/mails/${mailId}`);
+      if (!response.ok) {
+        throw new Error('邮件详情请求失败: ' + response.status);
+      }
+      
       const data = await response.json();
       
       if (!data.result) {
@@ -253,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // 保存当前邮件数据用于HTML预览
-      currentMailData = data;
+      currentEmailData = data;
       
       // 检查是否有HTML内容
       const hasHtml = !!data.html;
@@ -367,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 切换显示模式
   function switchViewMode(mode) {
-    if (!currentMailData) return;
+    if (!currentEmailData) return;
     
     const textContent = document.getElementById('textContent');
     const htmlContent = document.getElementById('htmlContent');
@@ -388,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
       viewHtmlBtn.classList.remove('btn-secondary');
       
       // 如果还没有加载HTML，这时加载
-      if (currentMailData.html) {
+      if (currentEmailData.html) {
         const htmlFrame = document.getElementById('htmlFrame');
         if (!htmlFrame.contentDocument.body.innerHTML) {
           const doc = htmlFrame.contentDocument || htmlFrame.contentWindow.document;
@@ -408,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
               a { color: #3b82f6; text-decoration: none; }
               a:hover { text-decoration: underline; }
             </style>
-            ${currentMailData.html}
+            ${currentEmailData.html}
           `);
           doc.close();
           
@@ -428,19 +395,23 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 显示HTML内容（模态框方式 - 旧的功能保留）
   function showHtmlContent() {
-    if (!currentMailData || !currentMailData.html) return;
+    if (!currentEmailData || !currentEmailData.html) return;
     
     const doc = htmlPreview.contentDocument || htmlPreview.contentWindow.document;
     doc.open();
-    doc.write(currentMailData.html);
+    doc.write(currentEmailData.html);
     doc.close();
     
     htmlModal.classList.remove('hidden');
+    htmlModal.classList.add('show');
+    htmlModal.style.display = 'flex';
   }
   
   // 关闭HTML模态框
   function closeHtmlPreview() {
     htmlModal.classList.add('hidden');
+    htmlModal.classList.remove('show');
+    htmlModal.style.display = 'none';
   }
   
   // 格式化日期
@@ -500,18 +471,43 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 初始化事件绑定
   function initEventListeners() {
-    refreshBtn.addEventListener('click', loadMailList);
-    closeHtmlModal.addEventListener('click', closeHtmlPreview);
+    console.log('初始化事件监听器');
     
-    // 绑定认证表单提交事件
-    authForm.addEventListener('submit', handleAuthSubmit);
+    // 绑定验证按钮点击事件
+    const submitBtn = document.getElementById('submit-btn');
+    console.log('找到提交按钮:', submitBtn);
+    
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function(e) {
+        console.log('验证按钮被点击');
+        handleAuthFormSubmit(e);
+      });
+      console.log('成功绑定验证按钮点击事件');
+    } else {
+      console.error('没有找到ID为submit-btn的按钮元素');
+    }
+    
+    // 其他事件绑定...
+    refreshBtn?.addEventListener('click', loadMailList);
+    closeHtmlModal?.addEventListener('click', closeHtmlPreview);
+    
+    // 绑定输入框Enter键提交
+    if (elements.accessCodeInput) {
+      elements.accessCodeInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          console.log('检测到Enter键，触发验证');
+          handleAuthFormSubmit(e);
+        }
+      });
+    }
     
     // 绑定查看模式选择事件
-    viewModeSelect.addEventListener('change', function() {
+    elements.viewModeSelect?.addEventListener('change', function() {
       currentViewMode = this.value;
       // 如果已经选择了邮件，则重新加载以应用新的视图模式
-      if (selectedMailId) {
-        loadMailDetail(selectedMailId);
+      if (currentEmailId) {
+        loadMailDetail(currentEmailId);
       }
       
       // 保存用户偏好到本地存储
@@ -545,14 +541,179 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 加载用户偏好设置
   function loadUserPreferences() {
+    console.log('加载用户偏好设置');
     const savedViewMode = localStorage.getItem('viewMode');
     if (savedViewMode) {
       currentViewMode = savedViewMode;
       // 更新选择器值
-      viewModeSelect.value = currentViewMode;
+      elements.viewModeSelect.value = currentViewMode;
+    }
+  }
+  
+  // 处理认证表单提交
+  async function handleAuthFormSubmit(e) {
+    if (e) e.preventDefault();
+    
+    // 获取访问码
+    const accessCode = elements.accessCodeInput.value.trim();
+    if (!accessCode) {
+      showAuthError('请输入访问码');
+      return;
+    }
+    
+    // 清除错误，显示加载状态
+    hideAuthError();
+    state.loading = true;
+    
+    // 显示加载状态
+    const authButton = document.getElementById('submit-btn');
+    const originalButtonText = authButton.innerHTML;
+    authButton.innerHTML = '<div class="loading-sm mx-auto"></div>';
+    authButton.disabled = true;
+    
+    try {
+      console.log('正在验证访问码:', accessCode);
+      const success = await verifyAccessCode(accessCode);
+      console.log('验证结果:', success);
+      
+      if (success) {
+        // 保存访问码和认证状态
+        state.accessCode = accessCode;
+        state.authenticated = true;
+        localStorage.setItem('accessCode', accessCode);
+        localStorage.setItem('authenticated', 'true');
+        
+        // 隐藏认证界面，显示应用界面
+        showApp();
+        
+        // 初始化应用
+        initApp();
+      } else {
+        showAuthError('访问码无效，请重试');
+        elements.authForm.classList.add('shake');
+        setTimeout(() => {
+          elements.authForm.classList.remove('shake');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('验证失败:', error);
+      showAuthError('认证失败: ' + error.message);
+      elements.authForm.classList.add('shake');
+      setTimeout(() => {
+        elements.authForm.classList.remove('shake');
+      }, 500);
+    } finally {
+      state.loading = false;
+      // 恢复按钮状态
+      authButton.innerHTML = originalButtonText;
+      authButton.disabled = false;
+    }
+  }
+  
+  // 验证访问码
+  async function verifyAccessCode(code) {
+    try {
+      console.log('发送验证请求，code:', code);
+      
+      if (!code) {
+        console.error('验证码为空');
+        throw new Error('请输入验证码');
+      }
+      
+      const response = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      
+      console.log('验证响应状态:', response.status);
+      
+      // 尝试解析响应为JSON，无论成功或失败
+      let jsonData;
+      try {
+        jsonData = await response.json();
+        console.log('验证响应数据:', jsonData);
+      } catch (e) {
+        console.error('解析响应数据失败:', e);
+        throw new Error('服务器响应无效');
+      }
+      
+      if (!response.ok) {
+        throw new Error(jsonData.message || '验证请求失败: ' + response.status);
+      }
+      
+      return jsonData.success === true;
+    } catch (error) {
+      console.error('验证访问码失败:', error);
+      throw error;
+    }
+  }
+  
+  // 显示认证错误
+  function showAuthError(message) {
+    elements.authError.textContent = message;
+    elements.authError.style.display = 'block';
+    elements.authError.classList.remove('hidden');
+  }
+  
+  // 隐藏认证错误
+  function hideAuthError() {
+    elements.authError.textContent = '';
+    elements.authError.style.display = 'none';
+    elements.authError.classList.add('hidden');
+  }
+  
+  // 显示应用界面
+  function showApp() {
+    console.log('显示应用界面');
+    try {
+      // 使用直接的DOM操作而不是classList
+      elements.authScreen.style.display = 'none';
+      elements.appContainer.style.display = 'block';
+      
+      // 确保存储了认证状态
+      if (state.authenticated && state.accessCode) {
+        localStorage.setItem('accessCode', state.accessCode);
+        localStorage.setItem('authenticated', 'true');
+        console.log('认证状态已保存到localStorage');
+      }
+    } catch (error) {
+      console.error('显示应用界面时出错:', error);
     }
   }
   
   // 开始认证流程
-  initAuth();
+  console.log('应用加载完成，开始认证流程');
+  
+  // 检查是否已经认证
+  if (state.authenticated && state.accessCode) {
+    // 验证本地存储的访问码
+    verifyAccessCode(state.accessCode)
+      .then(success => {
+        if (success) {
+          showApp();
+          initApp();
+        } else {
+          // 验证失败，清除本地存储
+          localStorage.removeItem('authenticated');
+          localStorage.removeItem('accessCode');
+          state.authenticated = false;
+          state.accessCode = '';
+          elements.authScreen.style.display = 'flex';
+          elements.appContainer.style.display = 'none';
+        }
+      })
+      .catch(() => {
+        // 验证出错，显示登录界面
+        localStorage.removeItem('authenticated');
+        localStorage.removeItem('accessCode');
+        state.authenticated = false;
+        state.accessCode = '';
+        elements.authScreen.style.display = 'flex';
+        elements.appContainer.style.display = 'none';
+      });
+  } else {
+    elements.authScreen.style.display = 'flex';
+    elements.appContainer.style.display = 'none';
+  }
 }); 

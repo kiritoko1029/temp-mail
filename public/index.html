@@ -9,28 +9,35 @@
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1.10.7/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1.10.7/locale/zh-cn.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/boxicons@2.1.0/css/boxicons.min.css">
+  <script>
+    // 检测URL是否包含刷新痕迹
+    window.onload = function() {
+      if (window.location.href.includes('?')) {
+        console.warn('检测到页面刷新，正在修正URL');
+        history.replaceState(null, document.title, window.location.pathname);
+      }
+    }
+  </script>
 </head>
 <body>
   <!-- 验证界面 -->
-  <div id="authScreen" class="hidden">
+  <div id="auth-screen" class="auth-container" style="display: flex;">
     <div class="auth-form">
       <div class="auth-logo">
         <i class='bx bx-envelope'></i>
       </div>
       <h2 class="auth-title">临时邮箱查看器</h2>
       <p class="mb-4 text-gray">请输入访问码以继续</p>
-      <form id="authForm">
-        <input type="password" id="accessCode" class="auth-input" placeholder="请输入访问码" autocomplete="off">
-        <button type="submit" class="auth-button">
-          <span id="authBtnText">验证</span>
-          <span id="authLoading" class="loading loading-sm hidden"></span>
-        </button>
-        <p id="authError" class="auth-error hidden"></p>
+      <p style="color: #6b7280; font-size: 0.8rem; margin-bottom: 10px;">默认访问码: 123456</p>
+      <form id="auth-form" onsubmit="return false;">
+        <input type="password" id="access-code" class="auth-input" placeholder="请输入访问码" autocomplete="off">
+        <button type="button" id="submit-btn" class="auth-button">验证</button>
+        <p id="auth-error" class="auth-error" style="display: none; color: red; margin-top: 10px;"></p>
       </form>
     </div>
   </div>
 
-  <div class="container">
+  <div id="app-container" class="container" style="display: none;">
     <header class="mb-4">
       <h1 class="app-title">临时邮箱查看器</h1>
       
@@ -88,7 +95,7 @@
   </div>
 
   <!-- 模态框 - 用于显示HTML内容 -->
-  <div id="htmlModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+  <div id="htmlModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden" style="display: none;">
     <div class="bg-white rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
       <div class="p-4 border-b border-gray-200 flex justify-between items-center">
         <h3 class="text-lg font-semibold">HTML 内容预览</h3>
@@ -103,5 +110,105 @@
   </div>
 
   <script src="app.js"></script>
+  
+  <!-- 直接验证脚本 -->
+  <script>
+    // 在页面加载完成后直接添加按钮点击事件
+    window.addEventListener('DOMContentLoaded', function() {
+      console.log('页面加载完成，配置验证按钮');
+      
+      const submitBtn = document.getElementById('submit-btn');
+      const accessCodeInput = document.getElementById('access-code');
+      const authError = document.getElementById('auth-error');
+      
+      if (submitBtn) {
+        console.log('找到验证按钮，添加点击事件');
+        
+        submitBtn.onclick = function() {
+          console.log('验证按钮被点击');
+          
+          // 获取访问码
+          const code = accessCodeInput.value.trim();
+          console.log('输入的访问码:', code);
+          
+          if (!code) {
+            showError('请输入访问码');
+            return;
+          }
+          
+          // 显示加载状态
+          submitBtn.disabled = true;
+          const originalText = submitBtn.textContent;
+          submitBtn.textContent = '验证中...';
+          
+          // 发送验证请求
+          fetch('/api/verify-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+          })
+          .then(response => response.json())
+          .then(data => {
+            console.log('验证响应:', data);
+            
+            if (data.success) {
+              console.log('验证成功');
+              // 保存验证状态
+              localStorage.setItem('accessCode', code);
+              localStorage.setItem('authenticated', 'true');
+              
+              // 隐藏验证界面，显示应用界面
+              document.getElementById('auth-screen').style.display = 'none';
+              document.getElementById('app-container').style.display = 'block';
+              
+              // 重载页面以初始化应用
+              //location.reload();
+            } else {
+              showError('验证码无效，请重试');
+            }
+          })
+          .catch(error => {
+            console.error('验证请求出错:', error);
+            showError('验证请求失败: ' + error.message);
+          })
+          .finally(() => {
+            // 恢复按钮状态
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+          });
+          
+          return false; // 阻止表单默认提交行为
+        };
+        
+        // 添加Enter键处理
+        accessCodeInput.onkeypress = function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitBtn.click();
+            return false;
+          }
+        };
+      } else {
+        console.error('未找到验证按钮');
+      }
+      
+      // 显示错误信息
+      function showError(message) {
+        console.error('验证错误:', message);
+        if (authError) {
+          authError.textContent = message;
+          authError.style.display = 'block';
+          
+          // 添加晃动效果
+          document.getElementById('auth-form').classList.add('shake');
+          setTimeout(() => {
+            document.getElementById('auth-form').classList.remove('shake');
+          }, 500);
+        } else {
+          alert(message);
+        }
+      }
+    });
+  </script>
 </body>
 </html> 
