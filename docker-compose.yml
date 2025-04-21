@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  tempmail:
+    build: .
+    container_name: tempmail-viewer
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - TEMPMAIL_API_URL=https://tempmail.plus/api
+      - EMAIL=eoyxyx@mailto.plus
+      - LIMIT=20
+      - EPIN=
+    volumes:
+      - ./logs:/app/logs 

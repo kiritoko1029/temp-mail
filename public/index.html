@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>临时邮箱查看器</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.10.7/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.10.7/locale/zh-cn.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/boxicons@2.1.0/css/boxicons.min.css">
+</head>
+<body>
+  <!-- 验证界面 -->
+  <div id="authScreen" class="hidden">
+    <div class="auth-form">
+      <div class="auth-logo">
+        <i class='bx bx-envelope'></i>
+      </div>
+      <h2 class="auth-title">临时邮箱查看器</h2>
+      <p class="mb-4 text-gray">请输入访问码以继续</p>
+      <form id="authForm">
+        <input type="password" id="accessCode" class="auth-input" placeholder="请输入访问码" autocomplete="off">
+        <button type="submit" class="auth-button">
+          <span id="authBtnText">验证</span>
+          <span id="authLoading" class="loading loading-sm hidden"></span>
+        </button>
+        <p id="authError" class="auth-error hidden"></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="container">
+    <header class="mb-4">
+      <h1 class="app-title">临时邮箱查看器</h1>
+      
+      <div class="toolbar">
+        <div class="flex items-center gap-2">
+          <button id="refreshBtn" class="btn">
+            <i class='bx bx-refresh mr-1'></i> 刷新邮件
+          </button>
+          
+          <div class="flex items-center gap-2">
+            <label for="viewModeSelect" class="text-sm text-gray">查看模式:</label>
+            <select id="viewModeSelect" class="select">
+              <option value="auto">自动选择</option>
+              <option value="html">HTML</option>
+              <option value="text">纯文本</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- 自动刷新状态指示器 -->
+        <div class="flex items-center text-sm text-gray gap-2">
+          <i class='bx bx-time'></i>
+          <span id="autoRefreshStatus">自动刷新: 活跃</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+      <!-- 邮件列表 -->
+      <div class="md:col-span-4">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="font-medium">邮件列表</h2>
+            <p class="text-sm text-gray" id="mailCount">共 0 封邮件</p>
+          </div>
+          <div id="mailList" class="card-body max-h-[70vh] overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <!-- 邮件详情 -->
+      <div class="md:col-span-8">
+        <div id="mailDetail" class="card">
+          <div class="p-6 text-center text-gray">
+            <i class='bx bx-envelope-open text-5xl'></i>
+            <p class="mt-4">选择一封邮件查看详情</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 提示信息 -->
+    <div class="text-center mt-4 text-sm text-gray">
+      <p>邮件内容每 5 秒自动刷新一次</p>
+    </div>
+  </div>
+
+  <!-- 模态框 - 用于显示HTML内容 -->
+  <div id="htmlModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+    <div class="bg-white rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
+      <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 class="text-lg font-semibold">HTML 内容预览</h3>
+        <button id="closeHtmlModal" class="text-gray-500 hover:text-gray-700">
+          <i class='bx bx-x text-2xl'></i>
+        </button>
+      </div>
+      <div class="p-4 overflow-auto flex-1">
+        <iframe id="htmlPreview" class="w-full h-full border-0 min-h-[60vh]"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html> 
