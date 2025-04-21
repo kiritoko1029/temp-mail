@@ -1,4 +1,20 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // 暴露关键函数到全局作用域，便于其他脚本直接调用
+  window.refreshMailList = function() {
+    console.log('通过全局函数调用刷新邮件列表');
+    loadMailList();
+  };
+  
+  window.initializeApp = function() {
+    console.log('通过全局函数初始化应用');
+    initApp();
+  };
+  
+  window.startMailRefresh = function() {
+    console.log('通过全局函数启动邮件自动刷新');
+    startAutoRefresh();
+  };
+  
   // 打印调试信息
   console.log('=========== 应用初始化 ===========');
   console.log('localStorage authenticated:', localStorage.getItem('authenticated'));
@@ -111,52 +127,87 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 启动自动刷新
   function startAutoRefresh() {
+    console.log('启动自动刷新功能');
+    
     // 清除现有的定时器
     if (refreshInterval) {
       clearInterval(refreshInterval);
+      console.log('清除现有的刷新定时器');
     }
     
-    console.log('启动自动刷新 (每5秒)');
+    console.log('设置每5秒自动刷新一次邮件列表');
+    
     // 每5秒刷新一次
     refreshInterval = setInterval(() => {
+      const autoRefreshStatus = document.getElementById('autoRefreshStatus');
+      
+      console.log('自动刷新触发, 页面可见状态:', document.visibilityState);
+      
       if (document.visibilityState === 'visible') {
+        console.log('页面可见，执行邮件列表刷新');
         loadMailList();
-        autoRefreshStatus.innerHTML = '自动刷新: <span class="text-success">活跃</span>';
+        if (autoRefreshStatus) {
+          autoRefreshStatus.innerHTML = '自动刷新: <span class="text-success">活跃</span>';
+        }
       } else {
-        autoRefreshStatus.innerHTML = '自动刷新: <span class="text-gray">暂停</span>';
+        console.log('页面不可见，暂停刷新');
+        if (autoRefreshStatus) {
+          autoRefreshStatus.innerHTML = '自动刷新: <span class="text-gray">暂停</span>';
+        }
       }
     }, 5000);
+    
+    // 立即执行一次刷新
+    console.log('立即执行首次邮件列表刷新');
+    loadMailList();
   }
   
   // 加载邮件列表
   async function loadMailList() {
+    console.log('开始加载邮件列表');
+    
+    const mailListEl = document.getElementById('mailList');
+    const mailCountEl = document.getElementById('mailCount');
+    const currentEmailEl = document.getElementById('currentEmail') || { textContent: '' };
+    
+    if (!mailListEl) {
+      console.error('未找到邮件列表元素');
+      return;
+    }
+    
     try {
       // 只有在第一次加载时显示加载动画，避免频繁刷新时闪烁
       if (!mailListEl.innerHTML || mailListEl.innerHTML.includes('没有邮件')) {
         mailListEl.innerHTML = '<div class="p-4 text-center"><div class="loading mx-auto"></div><p class="mt-4 text-gray">加载邮件列表中...</p></div>';
       }
       
+      console.log('发送获取邮件列表请求');
       const response = await fetch('/api/mails');
+      
       if (!response.ok) {
         throw new Error('邮件列表请求失败: ' + response.status);
       }
       
       const data = await response.json();
+      console.log('获取到邮件列表数据:', data);
       
       if (!data.result) {
         throw new Error('获取邮件失败');
       }
       
       // 更新邮箱地址(如果API返回了)和邮件数量
-      if (data.mail_list.length > 0 && data.mail_list[0].to) {
+      if (data.mail_list && data.mail_list.length > 0 && data.mail_list[0].to) {
         currentEmailEl.textContent = `当前邮箱: ${data.mail_list[0].to}`;
       }
-      mailCountEl.textContent = `共 ${data.count} 封邮件`;
+      
+      if (mailCountEl) {
+        mailCountEl.textContent = `共 ${data.count || 0} 封邮件`;
+      }
       
       // 清空列表
       mailListEl.innerHTML = '';
       
-      if (data.mail_list.length === 0) {
+      if (!data.mail_list || data.mail_list.length === 0) {
         mailListEl.innerHTML = '<div class="p-4 text-center text-gray">没有邮件</div>';
         return;
       }
@@ -179,7 +230,11 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="mail-item-sender">${mail.from_name || mail.from_mail}</div>
         `;
         
-        mailItem.addEventListener('click', () => loadMailDetail(mail.mail_id));
+        mailItem.addEventListener('click', () => {
+          console.log('邮件项被点击, ID:', mail.mail_id);
+          loadMailDetail(mail.mail_id);
+        });
+        
         mailListEl.appendChild(mailItem);
       });
       
@@ -190,9 +245,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       
+      console.log('邮件列表加载完成');
+      
     } catch (error) {
       console.error('加载邮件列表失败:', error);
-      mailListEl.innerHTML = `<div class="p-4 text-center text-danger">加载失败: ${error.message}</div>`;
+      if (mailListEl) {
+        mailListEl.innerHTML = `<div class="p-4 text-center text-danger">加载失败: ${error.message}</div>`;
+      }
     }
   }
   
@@ -487,9 +546,23 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('没有找到ID为submit-btn的按钮元素');
     }
     
+    // 绑定刷新按钮点击事件
+    const refreshButton = document.getElementById('refreshBtn');
+    if (refreshButton) {
+      console.log('找到刷新按钮, 绑定点击事件');
+      refreshButton.addEventListener('click', function() {
+        console.log('点击刷新按钮');
+        loadMailList();
+      });
+    } else {
+      console.error('未找到刷新按钮元素');
+    }
+    
     // 其他事件绑定...
-    refreshBtn?.addEventListener('click', loadMailList);
-    closeHtmlModal?.addEventListener('click', closeHtmlPreview);
+    const closeModalBtn = document.getElementById('closeHtmlModal');
+    if (closeModalBtn) {
+      closeModalBtn.addEventListener('click', closeHtmlPreview);
+    }
     
     // 绑定输入框Enter键提交
     if (elements.accessCodeInput) {
@@ -503,37 +576,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // 绑定查看模式选择事件
-    elements.viewModeSelect?.addEventListener('change', function() {
-      currentViewMode = this.value;
-      // 如果已经选择了邮件，则重新加载以应用新的视图模式
-      if (currentEmailId) {
-        loadMailDetail(currentEmailId);
-      }
-      
-      // 保存用户偏好到本地存储
-      localStorage.setItem('viewMode', currentViewMode);
-    });
+    const viewModeSelect = document.getElementById('viewModeSelect');
+    if (viewModeSelect) {
+      viewModeSelect.addEventListener('change', function() {
+        currentViewMode = this.value;
+        // 如果已经选择了邮件，则重新加载以应用新的视图模式
+        if (currentEmailId) {
+          loadMailDetail(currentEmailId);
+        }
+        
+        // 保存用户偏好到本地存储
+        localStorage.setItem('viewMode', currentViewMode);
+      });
+    }
     
     // 页面可见性变化时处理自动刷新状态
     document.addEventListener('visibilitychange', () => {
+      const statusElement = document.getElementById('autoRefreshStatus');
+      if (!statusElement) return;
+      
       if (document.visibilityState === 'visible') {
-        autoRefreshStatus.innerHTML = '自动刷新: <span class="text-success">活跃</span>';
+        statusElement.innerHTML = '自动刷新: <span class="text-success">活跃</span>';
         loadMailList(); // 页面变为可见时立即刷新一次
       } else {
-        autoRefreshStatus.innerHTML = '自动刷新: <span class="text-gray">暂停</span>';
+        statusElement.innerHTML = '自动刷新: <span class="text-gray">暂停</span>';
       }
     });
     
     // 点击模态框背景关闭
-    htmlModal.addEventListener('click', (e) => {
-      if (e.target === htmlModal) {
-        closeHtmlPreview();
-      }
-    });
+    const htmlModal = document.getElementById('htmlModal');
+    if (htmlModal) {
+      htmlModal.addEventListener('click', (e) => {
+        if (e.target === htmlModal) {
+          closeHtmlPreview();
+        }
+      });
+    }
     
     // ESC键关闭模态框
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !htmlModal.classList.contains('hidden')) {
+      if (e.key === 'Escape' && document.getElementById('htmlModal') && 
+          !document.getElementById('htmlModal').classList.contains('hidden')) {
         closeHtmlPreview();
       }
     });
